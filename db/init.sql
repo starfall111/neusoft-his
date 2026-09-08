@@ -1,5 +1,5 @@
 -- ============================================================
--- 东软云医院挂号预约系统 · 数据库初始化脚本（DDL 定稿 V2.1）
+-- 东软云医院挂号预约系统 · 数据库初始化脚本（DDL 定稿 V2.3）
 -- 契约级别：本文件是全组唯一数据契约（表结构 + 种子数据）
 --   来源：cloud_hospital.sql 定稿 + 2026-09-08 安全审查修复（全组对齐）
 --   ⚠️ 任何修改必须先全组对齐（见根目录 AGENTS.md 铁律一）
@@ -14,6 +14,12 @@
 --   ⑤ schedule / appointment_record 补齐 delmark——逻辑删除是防数据丢失的统一手段，六表齐备；
 --     "不删除"的业务限制由后端代码层实现（订单不提供删除接口、排班过期靠时间窗过滤），
 --     而不是靠表结构缺字段；删除医生的联动排班处理由"物理删除"改为"逻辑删除 delmark=1"。
+-- V2.3 调整（2026-09-08 需求迭代·挂号流程改版，全组对齐）：
+--   ⑥ dept 新增 parent_id：科室父子两级分类——父分类节点（内科/外科/妇儿/五官/皮肤/中医/其他，
+--     种子 id 5–11）+ 子科室挂 parent_id（原 4 个子科室 id 1–4 保持不变）；仅两级，不允许孙级；
+--   ⑦ 排班种子窗口由"未来 7 天(+1~+7)"扩为"当天 ~ +7 天"(n=0..7)，支撑当天挂号；
+--     时段规则改为 id%4=3 下午、其余上午（心血管内科 id1/id2 均上午，演示"下午暂无号源"空态）；
+--     设休息日 + 号源差异化取值，覆盖 充足/紧张/已满/休 四档演示（数值与 mock-data.md V2.3 一致）。
 -- 执行方式：mysql -uroot -p < init.sql（或 source init.sql）
 -- ============================================================
 
@@ -39,16 +45,20 @@ CREATE TABLE `patient_user` (
 
 
 -- 2、dept 科室表（S4 S11科室管理）
+-- ⚠️ V2.3：父子两级分类——parent_id 为 NULL 即父分类节点（七类，种子 id 5–11），
+--   子科室挂 parent_id；仅两级结构，不允许孙级；dept_category 冗余存父分类名称（后端维护，管理端列表直显）
 CREATE TABLE `dept` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键id',
-  `dept_name` varchar(100) NOT NULL COMMENT '科室名称',
-  `dept_category` varchar(100) NOT NULL COMMENT '科室分类',
+  `dept_name` varchar(100) NOT NULL COMMENT '科室名称（父分类节点=分类名，如"内科"）',
+  `dept_category` varchar(100) NOT NULL COMMENT '分类名称冗余：子科室=父分类名称，父分类节点=自身名称',
+  `parent_id` bigint NULL COMMENT '父分类id，关联dept.id；NULL=自身为父分类节点（V2.3）',
   `dept_intro` varchar(500) NULL COMMENT '科室简介',
   `delmark` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除标记：0正常，1已删除',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录更新时间',
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='科室信息表';
+  PRIMARY KEY (`id`),
+  KEY `idx_parent_id` (`parent_id`) COMMENT '按父分类查子科室索引（V2.3）'
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='科室信息表（父子两级）';
 
 
 -- 3、doctor 医生表（S5 S12医生管理）
@@ -144,12 +154,19 @@ CREATE TABLE `appointment_record` (
 -- 挂号费口径：主任医师 30 / 副主任医师 20 / 主治医师 15（Service 层职称映射，见拆解文档 6.5）
 -- ============================================================
 
--- 科室（4 个）
-INSERT INTO `dept` (`id`,`dept_name`,`dept_category`,`dept_intro`) VALUES
-(1,'心血管内科','内科','高血压、冠心病、心律失常等心血管疾病的诊断与治疗'),
-(2,'消化内科','内科','胃肠疾病、肝胆胰腺疾病的内镜诊疗与综合治疗'),
-(3,'普通外科','外科','普外科常见病、多发病的手术与综合治疗'),
-(4,'儿科','妇儿','儿童呼吸道、消化道常见病的诊疗与儿童保健');
+-- 科室（V2.3 两级结构：7 个父分类节点 id 5–11 + 4 个子科室 id 1–4；id 1–4 取值不变，便于既有 mock/联调）
+INSERT INTO `dept` (`id`,`dept_name`,`dept_category`,`parent_id`,`dept_intro`) VALUES
+(1,'心血管内科','内科',5,'高血压、冠心病、心律失常等心血管疾病的诊断与治疗'),
+(2,'消化内科','内科',5,'胃肠疾病、肝胆胰腺疾病的内镜诊疗与综合治疗'),
+(3,'普通外科','外科',6,'普外科常见病、多发病的手术与综合治疗'),
+(4,'儿科','妇儿',7,'儿童呼吸道、消化道常见病的诊疗与儿童保健'),
+(5,'内科','内科',NULL,'内科系统疾病诊治（父分类节点）'),
+(6,'外科','外科',NULL,'外科系统疾病诊治（父分类节点）'),
+(7,'妇儿','妇儿',NULL,'妇儿疾病诊治（父分类节点）'),
+(8,'五官','五官',NULL,'眼、耳鼻喉、口腔疾病诊治（父分类节点）'),
+(9,'皮肤','皮肤',NULL,'皮肤与过敏性疾病诊治（父分类节点）'),
+(10,'中医','中医',NULL,'中医辨证论治（父分类节点）'),
+(11,'其他','其他',NULL,'其他科室（父分类节点）');
 
 -- 医生（8 名，职称三档均有；建议姓名不重复——展示与选择友好，非数据库强制）
 INSERT INTO `doctor` (`id`,`dept_id`,`doctor_name`,`title`,`skill`) VALUES
@@ -162,19 +179,34 @@ INSERT INTO `doctor` (`id`,`dept_id`,`doctor_name`,`title`,`skill`) VALUES
 (7,4,'陈晓云','副主任医师','小儿肺炎、小儿腹泻的诊治'),
 (8,4,'刘洋','主治医师','儿童保健与儿科常见病诊治');
 
--- 排班：每名医生未来 7 天各一个时段（偶数号医生上午、奇数号医生下午，便于演示）
---   日期用 CURDATE()+N 动态生成：任何时候重置库，"未来 7 天"都有数据
---   号源按职称区分：主任医师 30 / 副主任医师 20 / 主治医师 15；剩余=总数
+-- 排班（V2.3 口径）：每名医生"当天 ~ +7 天"(n=0..7) 至多一条时段记录，支撑当天挂号与未来一周预约
+--   日期用 CURDATE()+N 动态生成：任何时候重置库，当天与未来 7 天都有数据
+--   时段：id%4=3 的医生下午出诊、其余上午——心血管内科（id 1、2）两名医生均上午，
+--         演示当天挂号页"下午 · 暂无号源"分组空态
+--   号源：按职称 主任 30 / 副主任 20 / 主治 15；下列差异化取值覆盖 充足/紧张/已满 三档演示
+--     · n=0 且 id=2（吴敏当天）余 3 —— 紧张档（当天挂号页）
+--     · n=3 且 id∈(1,2) 余 0       —— 心血管内科 +3 日全满（预约页日期条"已满"演示）
+--     · id=1 且 n=2 余 3           —— 周建国 +2 日紧张档（预约页选中日演示）
+--     · id=1 且 n=6 余 25          —— 周建国 +6 日
+--   休息日：周建国休 n∈{4,5,7}、吴敏休 n∈{2,4,5,7} → 心血管内科 +4/+5/+7 日（以 09-08 为当天即
+--           09-12/09-13/09-15）全科无排班，演示预约页日期条"休"态（日期状态由 GET /quotas/days 聚合）
 --   每医生每天仅一条记录，满足唯一键 uk_doctor_date_segment
 INSERT INTO `schedule` (`doctor_id`,`work_date`,`time_segment`,`total_quota`,`left_quota`)
 SELECT d.`id`,
        CURDATE() + INTERVAL x.n DAY,
-       CASE WHEN d.`id` % 2 = 0 THEN '上午' ELSE '下午' END,
+       CASE WHEN d.`id` % 4 = 3 THEN '下午' ELSE '上午' END,
        CASE d.`title` WHEN '主任医师' THEN 30 WHEN '副主任医师' THEN 20 ELSE 15 END,
-       CASE d.`title` WHEN '主任医师' THEN 30 WHEN '副主任医师' THEN 20 ELSE 15 END
+       CASE WHEN x.n = 0 AND d.`id` = 2 THEN 3
+            WHEN x.n = 3 AND d.`id` IN (1,2) THEN 0
+            WHEN d.`id` = 1 AND x.n = 2 THEN 3
+            WHEN d.`id` = 1 AND x.n = 6 THEN 25
+            ELSE CASE d.`title` WHEN '主任医师' THEN 30 WHEN '副主任医师' THEN 20 ELSE 15 END
+       END
 FROM `doctor` d
-CROSS JOIN (SELECT 1 n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
-            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7) x;
+CROSS JOIN (SELECT 0 n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+            UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7) x
+WHERE NOT (d.`id` = 1 AND x.n IN (4,5,7))
+  AND NOT (d.`id` = 2 AND x.n IN (2,4,5,7));
 
 -- 用户：不预置（密码为 BCrypt 密文，无法手写）
 --   演示/联调账号统一通过 POST /api/auth/register 创建，例：

@@ -1,8 +1,8 @@
-# 前端 Mock 数据契约（与 db/init.sql V2.0 种子数据一致）
+# 前端 Mock 数据契约（与 db/init.sql V2.3 种子数据一致）
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V2.2（铁律二变更：**DoctorRespDto 新增 `registerFee` 字段**——确认挂号页费用展示来源；其余接口与字段不变） |
+| 文档版本 | V2.3（2026-09-08 需求迭代·挂号流程改版：①GET /departments 父子两级结构（parentId）；②新增 GET /quotas 按科室+日期查号源；③新增 GET /quotas/days 日期条状态；④GET /schedules 支持 deptId 且响应带医生字段；⑤排班种子改当天~+7 并差异化余号/休息日。随 dto-contract V1.3 / init.sql V2.3） |
 | 适用对象 | 前端 C（Vue 管理端）、前端 D（鸿蒙患者端） |
 | 核心约定 | **字段名 = 接口 DTO 字段（小驼峰）**；**取值 = init.sql 种子数据**；前后端并行开发期间，前端 mock 只允许使用本文档字段与取值 |
 | ⚠️ 铁律 | 缺字段 / 字段不符 / 需要新取值 → **不要自行编造**，记录到当日计划文档「契约变更记录」并在站会提对齐诉求（见 AGENTS.md 铁律二） |
@@ -40,7 +40,8 @@
 | timeSegment（时段） | 上午 / 下午 |
 | gender（性别） | 男 / 女 |
 | status（挂号状态） | 待就诊 / 已取消 |
-| deptCategory（科室分类） | 自由文本；种子数据含：内科 / 外科 / 妇儿（管理端下拉建议固定这七类：内科/外科/妇儿/五官/皮肤/中医/其他） |
+| dayStatus（日期条状态，V2.3） | 可约 / 已满 / 休（GET /quotas/days 返回；当日科室排班 leftQuota 全为 0→已满，无排班→休） |
+| deptCategory（科室分类） | V2.3 起为父分类名称冗余：子科室=父分类名、父分类节点=自身名称（七类父节点种子预置：内科/外科/妇儿/五官/皮肤/中医/其他）；管理端保存科室改传 parentId，不再传分类文本 |
 
 > V2.0 变更要点：职称/时段/性别/状态由"数字编码+前端映射"改为**中文字符串直传**（与 cloud_hospital.sql 一致），前端不再需要编码映射表。
 
@@ -69,16 +70,25 @@
 { "code": 1002, "message": "用户名或密码错误", "data": null }
 ```
 
-### GET /api/departments（科室列表，S4；无参或 ?category=内科）
+### GET /api/departments（科室列表，S4；V2.3 父子两级平铺，前端按 parentId 组两级）
 
 ```json
 { "code": 200, "message": "成功", "data": [
-  { "id": 1, "deptName": "心血管内科", "deptCategory": "内科", "deptIntro": "高血压、冠心病、心律失常等心血管疾病的诊断与治疗" },
-  { "id": 2, "deptName": "消化内科",   "deptCategory": "内科", "deptIntro": "胃肠疾病、肝胆胰腺疾病的内镜诊疗与综合治疗" },
-  { "id": 3, "deptName": "普通外科",   "deptCategory": "外科", "deptIntro": "普外科常见病、多发病的手术与综合治疗" },
-  { "id": 4, "deptName": "儿科",       "deptCategory": "妇儿", "deptIntro": "儿童呼吸道、消化道常见病的诊疗与儿童保健" }
+  { "id": 5,  "deptName": "内科",   "deptCategory": "内科", "parentId": null, "deptIntro": "内科系统疾病诊治（父分类节点）" },
+  { "id": 6,  "deptName": "外科",   "deptCategory": "外科", "parentId": null, "deptIntro": "外科系统疾病诊治（父分类节点）" },
+  { "id": 7,  "deptName": "妇儿",   "deptCategory": "妇儿", "parentId": null, "deptIntro": "妇儿疾病诊治（父分类节点）" },
+  { "id": 8,  "deptName": "五官",   "deptCategory": "五官", "parentId": null, "deptIntro": "眼、耳鼻喉、口腔疾病诊治（父分类节点）" },
+  { "id": 9,  "deptName": "皮肤",   "deptCategory": "皮肤", "parentId": null, "deptIntro": "皮肤与过敏性疾病诊治（父分类节点）" },
+  { "id": 10, "deptName": "中医",   "deptCategory": "中医", "parentId": null, "deptIntro": "中医辨证论治（父分类节点）" },
+  { "id": 11, "deptName": "其他",   "deptCategory": "其他", "parentId": null, "deptIntro": "其他科室（父分类节点）" },
+  { "id": 1, "deptName": "心血管内科", "deptCategory": "内科", "parentId": 5, "deptIntro": "高血压、冠心病、心律失常等心血管疾病的诊断与治疗" },
+  { "id": 2, "deptName": "消化内科",   "deptCategory": "内科", "parentId": 5, "deptIntro": "胃肠疾病、肝胆胰腺疾病的内镜诊疗与综合治疗" },
+  { "id": 3, "deptName": "普通外科",   "deptCategory": "外科", "parentId": 6, "deptIntro": "普外科常见病、多发病的手术与综合治疗" },
+  { "id": 4, "deptName": "儿科",       "deptCategory": "妇儿", "parentId": 7, "deptIntro": "儿童呼吸道、消化道常见病的诊疗与儿童保健" }
 ] }
 ```
+
+> 渲染规则：`parentId === null` 为父分类（患者端 P4 左栏 / 管理端分类下拉）；`parentId !== null` 为子科室（P4 右栏 / 医生挂靠下拉）。五官/皮肤/中医/其他暂无子科室 → 对应右栏空态「该分类暂无科室」。
 
 ### GET /api/doctors?deptId=1（按科室查医生，S5；后端按 主任→副主任→主治 排序返回）
 
@@ -89,16 +99,61 @@
 ] }
 ```
 
-### GET /api/schedules?doctorId=1（近 7 天排班，S6）
+### GET /api/quotas?deptId=1&date=2026-09-08（当天/预约挂号号源，V2.3 新增；示例 date=当天）
 
-排班日期 = **当天 +1 ~ +7 天**（示例以 2026-09-08 为当天）；演示「已满」可将某条 leftQuota 置 0。
+按科室+日期返回医生号源行；**后端排序：先上午后下午、同时段按职称 主任→副主任→主治**（前端不重排）。示例以 2026-09-08 为当天（周建国余 30 充足 / 吴敏余 3 紧张，均上午出诊）。
 
 ```json
 { "code": 200, "message": "成功", "data": [
-  { "id": 101, "workDate": "2026-09-09", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 30 },
-  { "id": 102, "workDate": "2026-09-10", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 12 },
-  { "id": 103, "workDate": "2026-09-11", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 0 },
-  { "id": 104, "workDate": "2026-09-14", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 25 }
+  { "scheduleId": 101, "doctorId": 1, "doctorName": "周建国", "title": "主任医师",
+    "skill": "冠心病、高血压及其并发症的综合治疗", "timeSegment": "上午", "leftQuota": 30, "registerFee": 30.00 },
+  { "scheduleId": 106, "doctorId": 2, "doctorName": "吴敏", "title": "副主任医师",
+    "skill": "心律失常、心力衰竭的药物治疗", "timeSegment": "上午", "leftQuota": 3, "registerFee": 20.00 }
+] }
+```
+
+```json
+// 同接口 date=2026-09-10（预约选中日：当日仅周建国出诊、余 3 紧张档）
+{ "code": 200, "message": "成功", "data": [
+  { "scheduleId": 103, "doctorId": 1, "doctorName": "周建国", "title": "主任医师",
+    "skill": "冠心病、高血压及其并发症的综合治疗", "timeSegment": "上午", "leftQuota": 3, "registerFee": 30.00 }
+] }
+```
+
+> 渲染规则：`leftQuota = 0` → 「已满」整卡置灰、按钮禁用；某时段无记录 → 该分组渲染「暂无号源」空态。
+
+### GET /api/quotas/days?deptId=1（预约页一周日期条状态，V2.3 新增）
+
+返回该科室 **当天+1 ~ 当天+7** 共 7 天的可约状态（示例以 2026-09-08 为当天：09-11 全科号源为 0 → 已满；09-12/13/15 无排班 → 休）。
+
+```json
+{ "code": 200, "message": "成功", "data": [
+  { "date": "2026-09-09", "dayStatus": "可约" },
+  { "date": "2026-09-10", "dayStatus": "可约" },
+  { "date": "2026-09-11", "dayStatus": "已满" },
+  { "date": "2026-09-12", "dayStatus": "休" },
+  { "date": "2026-09-13", "dayStatus": "休" },
+  { "date": "2026-09-14", "dayStatus": "可约" },
+  { "date": "2026-09-15", "dayStatus": "休" }
+] }
+```
+
+### GET /api/schedules?doctorId=1（近 7 天排班，S6；V2.3 起亦支持 ?deptId= 科室级查询）
+
+查询窗口 = **当天 ~ 当天+6**（示例以 2026-09-08 为当天）；`?deptId=` 查询时响应带医生字段，前端按医生分组渲染（P5 排班总览）。周建国休 09-12/13/15（种子休息日），故示例仅 5 条。
+
+```json
+{ "code": 200, "message": "成功", "data": [
+  { "id": 101, "doctorId": 1, "doctorName": "周建国", "title": "主任医师",
+    "workDate": "2026-09-08", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 30 },
+  { "id": 102, "doctorId": 1, "doctorName": "周建国", "title": "主任医师",
+    "workDate": "2026-09-09", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 30 },
+  { "id": 103, "doctorId": 1, "doctorName": "周建国", "title": "主任医师",
+    "workDate": "2026-09-10", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 3 },
+  { "id": 104, "doctorId": 1, "doctorName": "周建国", "title": "主任医师",
+    "workDate": "2026-09-11", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 0 },
+  { "id": 105, "doctorId": 1, "doctorName": "周建国", "title": "主任医师",
+    "workDate": "2026-09-14", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 25 }
 ] }
 ```
 
@@ -177,11 +232,13 @@
 ### POST /api/admin/departments（新增科室；修改为 PUT /{id}，删除为 DELETE /{id}）
 
 ```json
-// 请求（名称必填；分类下拉建议固定七类）
-{ "deptName": "皮肤科", "deptCategory": "皮肤", "deptIntro": "皮肤病、过敏性疾病的诊疗" }
+// 请求（V2.3：parentId=父分类节点 id，来自 GET /departments 过滤 parentId 为空；不再传分类文本）
+{ "deptName": "皮肤科", "parentId": 9, "deptIntro": "皮肤病、过敏性疾病的诊疗" }
 // 成功
 { "code": 200, "message": "保存成功", "data": null }
 ```
+
+> 删除约束（V2.3）：DELETE 父分类节点时若其下仍有子科室 → 400「该分类下存在科室，无法删除」（后端校验）；删除子科室不受影响。
 
 ### POST /api/admin/doctors（新增医生；修改为 PUT /{id}，删除为 DELETE /{id}）
 

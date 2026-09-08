@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V1.2（铁律二变更：DoctorRespDto 新增 registerFee——挂号费对外展示口径；随拆解文档 V1.7） |
-| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成 |
+| 文档版本 | V1.3（2026-09-08 需求迭代·挂号流程改版：①科室父子分类——DepartmentRespDto 新增 parentId、DepartmentSaveReqDto 的 deptCategory 改传 parentId；②新增 GET /quotas（QuotaRespDto）按科室+日期查号源；③新增 GET /quotas/days（QuotaDayRespDto）日期条状态；④GET /schedules 支持 deptId 且 ScheduleRespDto 增医生字段。随 init.sql V2.3 / mock-data V2.3 / 拆解文档 V1.9） |
+| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成。⚠️ V1.3 为发起方按铁律二代拟落稿——B 重新生成前须先把本节变更同步进 gen-day-plans.mjs 内嵌模板，否则重新生成会回退本变更 |
 | 用途 | 后端写 DTO、前端写类型定义与请求函数的**唯一字段依据**；与 db/mock-data.md（JSON 示例）、《项目拆解设计说明书》第 4 章（路径与规约）配套 |
 | ⚠️ 防漂移 | 40 份日计划内嵌的「当日 DTO 速览」与本文件同源生成；两处不一致时以本文件为准，并立即提对齐 |
 
@@ -86,11 +86,14 @@
 
 **GET /departments（S4）、GET /admin/departments（S11） · DepartmentRespDto（响应）**
 
+> V1.3：GET /departments 返回**父子两级平铺列表**（7 个父分类节点 + 全部子科室），前端按 parentId 组两级（患者端 P4 左栏=父分类、右栏=子科室；管理端分类下拉/科室下拉=本列表过滤）。
+
 | 字段 | 类型 | 必填 | 校验 / 说明 |
 | --- | --- | --- | --- |
 | id | Long | 是 | dept.id |
-| deptName | String | 是 | 科室名称，≤100 |
-| deptCategory | String | 是 | 分类（管理端下拉七类：内科/外科/妇儿/五官/皮肤/中医/其他） |
+| deptName | String | 是 | 科室名称（父分类节点=分类名，如"内科"），≤100 |
+| deptCategory | String | 是 | 分类名称冗余：子科室=父分类名称、父分类节点=自身名称（后端按 parent_id 维护） |
+| parentId | Long | 否 | 父分类 id；NULL=自身为父分类节点（仅两级，无孙级） |
 | deptIntro | String | 否 | 简介，≤500 |
 
 **GET /doctors（S5）、GET /admin/doctors（S12） · DoctorRespDto（响应）**
@@ -105,11 +108,40 @@
 | deptName | String | 是 | 联查 dept 带出 |
 | registerFee | BigDecimal | 是 | 挂号费（后端按职称映射：主任30/副主任20/主治15，拆解文档 6.5-⑥）；确认挂号页费用展示来源，提交时不传、后端重算 |
 
-**GET /schedules（S6） · ScheduleRespDto（响应）**
+**GET /quotas?deptId=&date=（当天挂号 P4A / 预约挂号 P4B，V1.3 新增） · QuotaRespDto（响应）**
+
+> 按科室+日期返回医生号源行。date 为 yyyy-MM-dd（当天挂号传当天、预约传所选日期）；排序由后端保证：**先上午后下午，同时段内按职称 主任→副主任→主治**（前端不重排）。
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| scheduleId | Long | 是 | schedule.id；挂号时作为 scheduleId 传入 POST /registrations |
+| doctorId | Long | 是 | 医生 id |
+| doctorName | String | 是 | 医生姓名 |
+| title | String | 是 | 主任医师 / 副主任医师 / 主治医师（中文直传） |
+| skill | String | 否 | 擅长领域（前端单行截断展示） |
+| timeSegment | String | 是 | 上午 / 下午 |
+| leftQuota | Integer | 是 | 剩余号源；=0 时前端「已满」置灰不可点 |
+| registerFee | BigDecimal | 是 | 挂号费（后端按职称映射：主任30/副主任20/主治15，同 DoctorRespDto）；确认挂号页费用展示来源 |
+
+**GET /quotas/days?deptId=（预约页一周日期条，V1.3 新增） · QuotaDayRespDto（响应）**
+
+> 该科室未来 7 天（当天+1 ~ 当天+7）每日可约状态汇总，供预约页日期条渲染三态。
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| date | LocalDate | 是 | yyyy-MM-dd，共 7 天升序 |
+| dayStatus | String | 是 | 可约 / 已满 / 休（中文直传；当日该科室排班 leftQuota 全为 0→已满；无排班→休） |
+
+**GET /schedules?doctorId=（S6）或 ?deptId=（P5 排班总览） · ScheduleRespDto（响应）**
+
+> V1.3：新增 deptId 入参（与 doctorId 二选一，二者都传以 doctorId 为准）供 P5 科室级排班总览，此时响应须带医生信息（前端按医生分组渲染）；查询窗口固定**当天 ~ 当天+6** 共 7 天。
 
 | 字段 | 类型 | 必填 | 校验 / 说明 |
 | --- | --- | --- | --- |
 | id | Long | 是 | schedule.id；挂号时作为 scheduleId 传入 POST /registrations |
+| doctorId | Long | 是 | 医生 id（V1.3 新增；按 deptId 查询时作分组键） |
+| doctorName | String | 是 | 医生姓名（V1.3 新增，联查 doctor 带出） |
+| title | String | 是 | 主任医师 / 副主任医师 / 主治医师（V1.3 新增；职称标签展示） |
 | workDate | LocalDate | 是 | 出诊日期 yyyy-MM-dd |
 | timeSegment | String | 是 | 上午 / 下午（中文直传） |
 | totalQuota | Integer | 是 | 号源总数 |
@@ -117,10 +149,12 @@
 
 **POST / PUT /admin/departments（S11） · DepartmentSaveReqDto（请求）**
 
+> V1.3：deptCategory 改为后端按 parentId 冗余落库，请求不再传分类文本（消灭两个字段漂移的可能）。
+
 | 字段 | 类型 | 必填 | 校验 / 说明 |
 | --- | --- | --- | --- |
 | deptName | String | 是 | @NotBlank，≤100 |
-| deptCategory | String | 是 | @NotBlank；下拉七类取值 |
+| parentId | Long | 是 | @NotNull；父分类节点 id（父分类节点自身 parentId 为 NULL；本期仅维护子科室，父分类七类由种子预置） |
 | deptIntro | String | 否 | ≤500 |
 
 **POST / PUT /admin/doctors（S12） · DoctorSaveReqDto（请求）**
