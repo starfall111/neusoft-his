@@ -1,15 +1,15 @@
-# 成员C（前端 · Vue3 管理端） · 第 7 天：管理端登录页（M5）+ 扩展-AI对话页(可选)
+# 成员C（前端 · Vue3 管理端） · 第 7 天：管理端登录页（M5）+ 挂号单管理页（M8）+ 扩展-AI对话页(可选)
 
 | 项 | 内容 |
 | --- | --- |
 | 日期 | 2026-09-15（周二） |
-| 关联故事 | S2（管理端复用）/范围外（AI 对话页） |
-| 当日主题 | 管理端登录页（M5）+ 扩展-AI对话页(可选) |
+| 关联故事 | S2（管理端复用）/ 迭代 M8 挂号单管理 / 范围外（AI 对话页） |
+| 当日主题 | 管理端登录页（M5）+ 挂号单管理页（M8）+ 扩展-AI对话页(可选) |
 | 契约依据 | 《项目拆解设计说明书》第 4/6/7 章 · db/init.sql · db/mock-data.md |
 
 ## 1. 当日目标
 
-M5 登录页上线收口 401 规则（V1.2 迭代补排期）；AI 对话页为主线外可选项。
+M5 登录页上线收口 401 规则；挂号单管理页（M8）mock 渲染完成（V1.4 迭代补排期）；AI 对话页为主线外可选项。
 
 ## 2. 前置条件（开工前逐项确认）
 
@@ -29,16 +29,19 @@ M5 登录页上线收口 401 规则（V1.2 迭代补排期）；AI 对话页为�
 - M5 管理端登录·正常态.png
 - M5 管理端登录·错误态.png
 - M4 全局-401提示页.png（401 统一跳 /login 实装对照）
+- ⚠️ M8 挂号单管理暂无截图：以设计稿 V1.4「M8 挂号单管理页」线框+字段规格为准开发，完成后回补截图。
 
 ## 3. 任务清单（按序执行）
 
 1. ⭐ 管理端登录页 M5（/login，免登录路由；已登录访问 /login 重定向 /departments）：两框空按钮禁用；提交 `POST /auth/login`（body=LoginReqDto{username,password}）按钮 loading 防重复；1002 → 输入框红描边+框下红字（行内提示，非 Message 弹出）；成功 token 存 localStorage → 跳 /departments；网络异常 ElMessage.error
-2. 401 统一跳转实装（M4 规则收口）：axios 拦截器 401 → 清 token → 跳 /login；无 token 访问受控页（含 /admin/dashboard）被路由守卫拦截
-3. 若 SSE 就绪且 M5 完成：管理端/AI 对话页接入（可选）；否则继续支援 D 或回归管理端
+2. 401 统一跳转实装（M4 规则收口）：axios 拦截器 401 → 清 token → 跳 /login；无 token 访问受控页（含 /admin/dashboard、/admin/users）被路由守卫拦截
+3. ⭐ 挂号单管理页（M8，/admin/registrations，侧边栏第五项，只读）：①`src/api/registration.ts` 定义 GET /admin/registrations（类型从 mock-data.md V2.5 逐字段抄写）；②搜索区（日期选择器+状态下拉 待就诊/已取消+关键字 患者用户名/订单号+查询/重置复位第 1 页）；③表格十列（订单号等宽可复制 Toast、状态 el-tag 待就诊=primary/已取消=info、费用 ¥两位小数）；④只读无写操作；⑤loading/空态按 M2 规范；mock 期用 mock-data.md V2.5 示例值，B 的 A·D05 接口就绪后切真实并填第 10 节对照表
+4. 若 SSE 就绪且 M5/M8 完成：管理端/AI 对话页接入（可选）；否则继续支援 D 或回归管理端
 
 ## 4. 涉及契约（表 / 接口 / Key）
 
 - M5：`POST /auth/login`（LoginReqDto / LoginRespDto，dto-contract 认证域；鉴权口径按 #12 销项结论）
+- M8：拆解文档 4.6.3 · dto-contract V1.5 · mock-data V2.5（A·D05 实现）
 - SSE 格式：与 A 对齐的新契约（仅 AI 对话页）
 
 ### 当日 DTO 速览（权威定义：db/dto-contract.md，与本表同源生成；冲突以契约文件为准并提对齐，禁止私自加改字段）
@@ -53,11 +56,14 @@ M5 登录页上线收口 401 规则（V1.2 迭代补排期）；AI 对话页为�
 | userId（响应） | Long | 是 | 用户 id |
 | username（响应） | String | 是 | 回显用户名 |
 
+**GET /admin/registrations（M8，只读分页） · AdminRegistrationRespDto（响应，PageDTO 包装）**：`orderNo, username, memberName, deptName, doctorName, workDate, timeSegment, registerFee, status, createTime`（筛选 `date/status/keyword`；快照字段禁止前端改算）
+
 ## 5. 自测清单（DoD，完成打勾）
 
 - [ ] M5 五态齐全（正常/提交中/业务错误红框行内红字/网络错误/空值禁用），对照 M5 两张截图验收
 - [ ] 成功登录 token 落 localStorage 并跳 /departments；已登录访问 /login 被重定向
-- [ ] 401 → 清 token 跳 /login；无 token 访问 /admin/departments、/admin/dashboard 被路由守卫拦截
+- [ ] 401 → 清 token 跳 /login；无 token 访问 /admin/departments、/admin/dashboard、/admin/users 被路由守卫拦截
+- [ ] M8 三筛选组合查询正确且复位第 1 页；订单号复制 Toast；状态双态 el-tag；mock 渲染通过
 - [ ] AI 对话页：演示级可用或明确放弃并记录
 
 ## 6. 产出物
@@ -74,6 +80,7 @@ M5 登录页上线收口 401 规则（V1.2 迭代补排期）；AI 对话页为�
 | # | 时间 | 变更内容（DDL/接口结构/路径） | 影响成员 | 对齐状态 |
 | --- | --- | --- | --- | --- |
 | 1 | 2026-09-10 | M5 登录页补排期入本日（V1.2 设计稿迭代时未排期）：复用 POST /auth/login（不做新接口）；#12 鉴权口径初拟方案 A（复用 + 种子 admin，不加 role 列） | A / B | ☐ 未对齐（#12 站会销项后转 ☑） |
+| 2 | 2026-09-10 | 新增挂号单管理只读接口（M8，铁律二/三）：GET /admin/registrations + AdminRegistrationRespDto，A·D05 实现 | A / C | ☑ 已对齐（组长 2026-09-10 确认；dto-contract V1.5 / mock-data V2.5 / 拆解文档 4.6.3 已落稿） |
 
 ## 9. 答辩积累区（每日收工前必填，AGENTS.md 规则六/七；第 9 天汇总为答辩讲稿与问题库素材）
 

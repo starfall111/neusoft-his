@@ -1,15 +1,15 @@
-# 成员C（前端 · Vue3 管理端） · 第 6 天：支援App端与联调
+# 成员C（前端 · Vue3 管理端） · 第 6 天：患者管理页 + 支援App端与联调
 
 | 项 | 内容 |
 | --- | --- |
 | 日期 | 2026-09-14（周一） |
-| 关联故事 | 全局 |
-| 当日主题 | 支援App端与联调 |
+| 关联故事 | 全局 / 迭代 M7 患者管理 |
+| 当日主题 | 患者管理页（M7）+ 支援App端与联调 |
 | 契约依据 | 《项目拆解设计说明书》第 4/6/7 章 · db/init.sql · db/mock-data.md |
 
 ## 1. 当日目标
 
-支撑 M4 全流程打通。
+支撑 M4 全流程打通；患者管理页（M7）mock 渲染完成。
 
 ## 2. 前置条件（开工前逐项确认）
 
@@ -22,6 +22,7 @@
 - 必读规范：doc/ui/UI统一规范.md
 - 截图目录：doc/ui/pen/页面截图/（截图即设计稿，以图片为准）
 - ℹ️ P9 取消确认弹窗用于支援任务；M2 / M3 / M4 用于管理端 M4 全流程回归对照。
+- ⚠️ M7 患者管理暂无截图：以设计稿 V1.4「M7 患者管理页」线框+字段规格为准开发，完成后回补截图。
 
 本日对应设计稿截图：
 
@@ -32,32 +33,32 @@
 
 ## 3. 任务清单（按序执行）
 
-1. 继续支援 D：取消挂号二次确认弹窗等静态部分
-2. 管理端参与 M4 全流程回归（造数：改科室/医生数据配合演示场景）
+1. ⭐ 患者管理页（M7，/admin/users，侧边栏第四项）：①M1 侧边栏追加「患者管理/挂号单管理/排班管理」三项（V1.4 六项）；②`src/api/user.ts` 定义 GET /admin/users + ban/unban（类型从 mock-data.md V2.5 逐字段抄写）；③搜索区（keyword+查询/重置复位第 1 页）+ 表格六列（状态 el-tag：正常=success/已封禁=danger）+ 分页；④封禁/解封二次确认（ElMessageBox）+ 成功刷新当前页；⑤loading/空态按 M2 规范；mock 期用 mock-data.md V2.5 示例值
+2. 继续支援 D：取消挂号二次确认弹窗等静态部分
+3. 管理端参与 M4 全流程回归（造数：改科室/医生数据配合演示场景）
 
 ## 4. 涉及契约（表 / 接口 / Key）
 
-- 当日不涉及契约文件改动
+- 患者管理：拆解文档 4.6.2 · dto-contract V1.5 · mock-data V2.5（V1.4 落契约）
 
 ### 当日 DTO 速览（权威定义：db/dto-contract.md，与本表同源生成；冲突以契约文件为准并提对齐，禁止私自加改字段）
 
-**GET /registrations/my（S9） · RegistrationRespDto（响应）**
+**GET /admin/users（M7） · AdminUserRespDto（响应，PageDTO 包装）**
 
 | 字段 | 类型 | 必填 | 校验 / 说明 |
 | --- | --- | --- | --- |
-| orderNo | String | 是 | 唯一订单号 |
-| memberName | String | 是 | 联查 patient_member（表内未存就诊人快照） |
-| deptName | String | 是 | 下单快照 dept_name_snap |
-| doctorName | String | 是 | 下单快照 doctor_name_snap |
-| workDate | LocalDate | 是 | 就诊日期 |
-| timeSegment | String | 是 | 上午 / 下午 |
-| registerFee | BigDecimal | 是 | 挂号费 |
-| status | String | 是 | 待就诊 / 已取消（中文直传） |
-| createTime | LocalDateTime | 是 | 下单时间；列表按此倒序 |
+| id | Long | 是 | patient_user.id |
+| username | String | 是 | 登录用户名（keyword 模糊查询目标） |
+| registerTime | LocalDateTime | 是 | 注册时间 yyyy-MM-dd HH:mm:ss |
+| status | String | 是 | 正常 / 已封禁（el-tag 双态） |
+| memberCount | Integer | 是 | 就诊人数量，「N 人」格式展示 |
+
+**POST /admin/users/{id}/ban、/unban（M7）**：无 body；封禁后患者端登录→1003「账号已封禁，如有疑问请联系医院」
 
 ## 5. 自测清单（DoD，完成打勾）
 
 - [ ] M4 中管理端角色无阻塞
+- [ ] M7 患者管理页 mock 渲染通过：搜索复位分页、状态双态 el-tag、封禁/解封二次确认+刷新
 
 ## 6. 产出物
 
@@ -71,7 +72,7 @@
 
 | # | 时间 | 变更内容（DDL/接口结构/路径） | 影响成员 | 对齐状态 |
 | --- | --- | --- | --- | --- |
-|  |  |  |  | ☐ 未对齐 / ☑ 已对齐 |
+| 1 | 2026-09-10 | 新增患者管理接口组（M7，铁律二/三）：GET /admin/users + ban/unban；涉 DDL patient_user 加 status 列（init.sql V2.4，铁律一）；封禁登录→1003 | B（实现）/ D（1003 Toast） | ☑ 已对齐（组长 2026-09-10 确认；dto-contract V1.5 / mock-data V2.5 已落稿；本日 mock 开发，D07 起切真实） |
 
 ## 9. 答辩积累区（每日收工前必填，AGENTS.md 规则六/七；第 9 天汇总为答辩讲稿与问题库素材）
 
@@ -80,6 +81,7 @@
 | 技术点（当日预填） | 我的理解（自己写一两句） | 对应代码/文件 | 预判老师追问 |
 | --- | --- | --- | --- |
 | 用浏览器 Network 面板定位联调问题 |  |  |  |
+| 封禁状态机：status 列 vs delmark 的语义分工 |  |  |  |
 
 ### b. 今日最有讲头的问题（从 exception-day06/ 的 issue 中挑 1 条，浓缩成一句话答辩素材；无 issue 则填「今日无」）
 

@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V1.4（2026-09-10 需求迭代·统计大屏：新增管理端统计接口组——GET /admin/stats/summary、/trend?days=7、/dept-rank、/doctor-top?limit=5、/title-ratio、/latest?limit=4，**按卡拆分 6 接口**（管理端设计稿待对齐 #13 定稿），新增 6 个 Stats*RespDto；统计口径（#15 定稿）=趋势/排行近 7 天有效挂号单（不含已取消）、KPI 环比较昨日、注册用户较上周。随 mock-data V2.4 / 拆解文档 V1.10） |
-| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成。⚠️ V1.3 / V1.4 为发起方按铁律二代拟落稿——B 重新生成前须先把对应变更同步进 gen-day-plans.mjs 内嵌模板，否则重新生成会回退本变更 |
+| 文档版本 | V1.5（2026-09-10 需求迭代·管理端运营页：新增患者管理 GET /admin/users + POST /{id}/ban、/{id}/unban（封禁涉 DDL：patient_user 加 status 列，init.sql V2.4）；挂号单管理 GET /admin/registrations 只读分页；排班管理 /admin/schedules CRUD（AdminScheduleSaveReqDto/UpdateReqDto）。随 init.sql V2.4 / mock-data V2.5 / 拆解文档 V1.11；错误码新增 1003、5001–5004） |
+| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成。⚠️ V1.3–V1.5 为发起方按铁律二/三代拟落稿——B 重新生成前须先把对应变更同步进 gen-day-plans.mjs 内嵌模板，否则重新生成会回退本变更 |
 | 用途 | 后端写 DTO、前端写类型定义与请求函数的**唯一字段依据**；与 db/mock-data.md（JSON 示例）、《项目拆解设计说明书》第 4 章（路径与规约）配套 |
 | ⚠️ 防漂移 | 40 份日计划内嵌的「当日 DTO 速览」与本文件同源生成；两处不一致时以本文件为准，并立即提对齐 |
 
@@ -255,11 +255,70 @@
 | doctorName | String | 是 | 下单快照 doctor_name_snap |
 | registerFee | BigDecimal | 是 | 挂号费快照，两位小数 |
 
+### 管理端运营域（V1.5 新增：患者管理=his-user·B / 挂号单管理=his-registration·A / 排班管理=his-hospital·B；管理端 C 消费）
+
+**GET /admin/users（M7 患者管理分页，支持 keyword 模糊查用户名） · AdminUserRespDto（响应）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| id | Long | 是 | patient_user.id |
+| username | String | 是 | 登录用户名 |
+| registerTime | LocalDateTime | 是 | 注册时间 yyyy-MM-dd HH:mm:ss |
+| status | String | 是 | 正常 / 已封禁（中文直传，V2.4 新列） |
+| memberCount | Integer | 是 | 就诊人数量（联查 patient_member 计数；便于演示封禁前核对） |
+
+**POST /admin/users/{id}/ban、POST /admin/users/{id}/unban（封禁/解封）**：无 body，返回 `Result<Void>`；封禁后该账号登录 → **1003 账号已封禁**；id 不存在 → 400。
+
+**GET /admin/registrations（M8 挂号单管理分页，只读；支持 date/status/keyword 筛选） · AdminRegistrationRespDto（响应）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| orderNo | String | 是 | 唯一订单号 |
+| username | String | 是 | 下单患者账号（联查 patient_user） |
+| memberName | String | 是 | 就诊人（联查 patient_member） |
+| deptName | String | 是 | 快照 dept_name_snap |
+| doctorName | String | 是 | 快照 doctor_name_snap |
+| workDate | LocalDate | 是 | 就诊日期 yyyy-MM-dd |
+| timeSegment | String | 是 | 上午 / 下午 |
+| registerFee | BigDecimal | 是 | 挂号费快照，两位小数 |
+| status | String | 是 | 待就诊 / 已取消（中文直传） |
+| createTime | LocalDateTime | 是 | 下单时间；默认按此倒序 |
+
+**GET /admin/schedules（M9 排班列表，doctorId 与日期区间可选筛选） · AdminScheduleRespDto（响应，List）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| id | Long | 是 | schedule.id |
+| doctorId | Long | 是 | doctor.id |
+| doctorName | String | 是 | 联查 doctor 带出 |
+| deptName | String | 是 | 医生所属科室（联查 dept） |
+| workDate | LocalDate | 是 | 出诊日期 yyyy-MM-dd |
+| timeSegment | String | 是 | 上午 / 下午 |
+| totalQuota | Integer | 是 | 号源总数 |
+| leftQuota | Integer | 是 | 剩余号源（=totalQuota-已挂号；已挂号数前端可自算） |
+
+**POST /admin/schedules（新增排班） · AdminScheduleSaveReqDto（请求）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| doctorId | Long | 是 | @NotNull；医生须存在且为子科室医生（→4001） |
+| workDate | LocalDate | 是 | @NotNull yyyy-MM-dd；仅允许**当天及以后**（过去日期→400） |
+| timeSegment | String | 是 | 上午 / 下午（中文直传；与医生+日期组合唯一→5001） |
+| totalQuota | Integer | 是 | @Min(1)，≤200；落库 left_quota=total_quota |
+
+**PUT /admin/schedules/{id}（修改排班，仅可改号源数） · AdminScheduleUpdateReqDto（请求）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| totalQuota | Integer | 是 | @Min(1)，≤200；须 ≥ 已挂号数（total_quota-left_quota，否则→5004）；仅未来日期可改（→5002） |
+
+**DELETE /admin/schedules/{id}（删除排班，逻辑删除）**：无 body，返回 `Result<Void>`；已有**有效挂号**（待就诊）→ **5003 该排班已有挂号，不可删除**；仅未来日期可删（→5002）。
+
 ## 责任分工
 
 | 角色 | 职责 |
 | --- | --- |
-| 后端 B | auth / members / departments / doctors / schedules / admin（含 stats 统计组 6 RespDto，V1.4）全部 DTO 实现与 @Schema 注解 |
-| 后端 A | registrations 三个 DTO 实现与 @Schema 注解 |
+| 后端 B | auth（含封禁登录拦截 1003，V1.5）/ members / departments / doctors / schedules（含管理端排班 CRUD，V1.5）/ admin（含 stats 统计组 6 RespDto，V1.4；患者管理 AdminUserRespDto，V1.5）全部 DTO 实现与 @Schema 注解 |
+| 后端 A | registrations 三个 DTO + 管理端挂号单列表 AdminRegistrationRespDto（V1.5）实现与 @Schema 注解 |
 | 前端 C | 管理端相关类型从本文件逐字段抄写至 src/api/ |
 | 前端 D | 患者端相关类型从本文件逐字段抄写至 common/api/ |

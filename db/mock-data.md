@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V2.4（2026-09-10 需求迭代·统计大屏：管理端新增 GET /api/admin/stats/* 六接口示例（summary/trend/dept-rank/doctor-top/title-ratio/latest，按卡拆分，取值=管理端设计稿 M6 示例表）；顺带修复 §4 管理端分页示例遗漏 parentId。随 dto-contract V1.4 / 拆解文档 V1.10） |
+| 文档版本 | V2.5（2026-09-10 需求迭代·管理端运营页：新增患者管理 /api/admin/users 分页+封禁/解封、挂号单管理 /api/admin/registrations 只读分页、排班管理 /api/admin/schedules CRUD 示例；封禁涉 DDL patient_user 加 status 列（init.sql V2.4），登录封禁→1003。随 dto-contract V1.5 / 拆解文档 V1.11） |
 | 适用对象 | 前端 C（Vue 管理端）、前端 D（鸿蒙患者端） |
 | 核心约定 | **字段名 = 接口 DTO 字段（小驼峰）**；**取值 = init.sql 种子数据**；前后端并行开发期间，前端 mock 只允许使用本文档字段与取值 |
 | ⚠️ 铁律 | 缺字段 / 字段不符 / 需要新取值 → **不要自行编造**，记录到当日计划文档「契约变更记录」并在站会提对齐诉求（见 AGENTS.md 铁律二） |
@@ -299,4 +299,63 @@
             { "createTime": "2026-09-10 13:05:41", "memberName": "张奶奶", "deptName": "儿科",       "doctorName": "陈晓云", "registerFee": 20.00 },
             { "createTime": "2026-09-10 11:47:18", "memberName": "张小满", "deptName": "消化内科",   "doctorName": "王芳",   "registerFee": 15.00 },
             { "createTime": "2026-09-10 10:12:56", "memberName": "张奶奶", "deptName": "普通外科",   "doctorName": "李强",   "registerFee": 20.00 } ] }
+```
+
+### GET /api/admin/users（患者管理分页，M7；V2.5 新增；支持 ?keyword= 模糊查用户名）
+
+```json
+{ "code": 200, "message": "成功",
+  "data": { "total": 2, "pageNum": 1, "pageSize": 10, "records": [
+    { "id": 1, "username": "zhangsan", "registerTime": "2026-09-07 09:30:00", "status": "正常",   "memberCount": 2 },
+    { "id": 2, "username": "lisi",     "registerTime": "2026-09-08 14:12:36", "status": "已封禁", "memberCount": 1 }
+  ] } }
+```
+
+### POST /api/admin/users/{id}/ban、POST /api/admin/users/{id}/unban（封禁/解封，M7；V2.5 新增）
+
+```json
+// 成功（两接口同形，无 body）
+{ "code": 200, "message": "操作成功", "data": null }
+// id 不存在
+{ "code": 400, "message": "用户不存在", "data": null }
+// 封禁后该患者登录（患者端 /api/auth/login）→
+{ "code": 1003, "message": "账号已封禁，如有疑问请联系医院", "data": null }
+```
+
+### GET /api/admin/registrations（挂号单管理分页，M8 只读；V2.5 新增；支持 ?date=&status=&keyword= 筛选）
+
+```json
+{ "code": 200, "message": "成功",
+  "data": { "total": 2, "pageNum": 1, "pageSize": 10, "records": [
+    { "orderNo": "202609081030221234567890", "username": "zhangsan", "memberName": "张小满",
+      "deptName": "心血管内科", "doctorName": "周建国", "workDate": "2026-09-09", "timeSegment": "上午",
+      "registerFee": 30.00, "status": "待就诊", "createTime": "2026-09-08 10:30:22" },
+    { "orderNo": "202609090915105678901234", "username": "lisi", "memberName": "李爷爷",
+      "deptName": "儿科", "doctorName": "陈晓云", "workDate": "2026-09-10", "timeSegment": "下午",
+      "registerFee": 20.00, "status": "已取消", "createTime": "2026-09-09 09:15:10" }
+  ] } }
+```
+
+### GET /api/admin/schedules（排班列表，M9；V2.5 新增；?doctorId=&startDate=&endDate= 可选筛选）
+
+```json
+{ "code": 200, "message": "成功",
+  "data": [ { "id": 101, "doctorId": 1, "doctorName": "周建国", "deptName": "心血管内科",
+              "workDate": "2026-09-11", "timeSegment": "上午", "totalQuota": 30, "leftQuota": 28 } ] }
+```
+
+### POST /api/admin/schedules、PUT /api/admin/schedules/{id}、DELETE /api/admin/schedules/{id}（排班 CRUD，M9；V2.5 新增）
+
+```json
+// POST 请求（left_quota 由后端置为=total_quota）
+{ "doctorId": 3, "workDate": "2026-09-12", "timeSegment": "上午", "totalQuota": 20 }
+// PUT 请求（仅改号源数）
+{ "totalQuota": 25 }
+// DELETE / POST / PUT 成功同形
+{ "code": 200, "message": "操作成功", "data": null }
+// 业务错误示例
+{ "code": 5001, "message": "该医生当日该时段已有排班", "data": null }
+{ "code": 5002, "message": "仅未来日期的排班可修改或删除", "data": null }
+{ "code": 5003, "message": "该排班已有挂号，不可删除", "data": null }
+{ "code": 5004, "message": "号源数不能小于已挂号数", "data": null }
 ```

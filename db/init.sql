@@ -1,5 +1,5 @@
 -- ============================================================
--- 东软云医院挂号预约系统 · 数据库初始化脚本（DDL 定稿 V2.3）
+-- 东软云医院挂号预约系统 · 数据库初始化脚本（DDL 定稿 V2.4）
 -- 契约级别：本文件是全组唯一数据契约（表结构 + 种子数据）
 --   来源：cloud_hospital.sql 定稿 + 2026-09-08 安全审查修复（全组对齐）
 --   ⚠️ 任何修改必须先全组对齐（见根目录 AGENTS.md 铁律一）
@@ -20,6 +20,9 @@
 --   ⑦ 排班种子窗口由"未来 7 天(+1~+7)"扩为"当天 ~ +7 天"(n=0..7)，支撑当天挂号；
 --     时段规则改为 id%4=3 下午、其余上午（心血管内科 id1/id2 均上午，演示"下午暂无号源"空态）；
 --     设休息日 + 号源差异化取值，覆盖 充足/紧张/已满/休 四档演示（数值与 mock-data.md V2.3 一致）。
+-- V2.4 调整（2026-09-10 需求迭代·管理端运营页，组长确认）：
+--   ⑧ patient_user 新增 status 列（正常/已封禁，默认正常 + CHECK 枚举）：支撑管理端患者管理
+--     M7 封禁/解封（铁律一变更；封禁账号登录返回 1003，种子/存量行默认值自动为「正常」）。
 -- 执行方式：mysql -uroot -p < init.sql（或 source init.sql）
 -- ============================================================
 
@@ -30,17 +33,19 @@ DEFAULT COLLATE utf8mb4_unicode_ci;
 
 USE neusoft_hospital;
 
--- 1、patient_user 患者账号表（S1 S2 S3 注册登录）
+-- 1、patient_user 患者账号表（S1 S2 S3 注册登录；V2.4 起含管理端封禁）
 CREATE TABLE `patient_user` (
   `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键id',
   `username` varchar(50) NOT NULL COMMENT '登录用户名，全局唯一',
   `password` varchar(100) NOT NULL COMMENT '加密后的密码，禁止明文存储',
   `register_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '账号注册时间',
+  `status` varchar(20) NOT NULL DEFAULT '正常' COMMENT '账号状态：正常 / 已封禁（V2.4；封禁后登录→1003）',
   `delmark` tinyint NOT NULL DEFAULT '0' COMMENT '逻辑删除标记：0正常，1已删除',
   `create_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
   `update_time` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_username` (`username`) COMMENT '用户名唯一索引，防止重复注册'
+  UNIQUE KEY `uk_username` (`username`) COMMENT '用户名唯一索引，防止重复注册',
+  CONSTRAINT `chk_user_status` CHECK (`status` IN ('正常','已封禁')) COMMENT '账号状态枚举约束（V2.4）'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='患者账号表';
 
 
