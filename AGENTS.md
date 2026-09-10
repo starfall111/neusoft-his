@@ -67,7 +67,7 @@ neusoft-his/
 
 | 对象 | 确认时间 | 编码工作目录（本机完整路径） | 备注 |
 | --- | --- | --- | --- |
-| 后端仓库（A/B 使用） | 2026-09-09 | E:\aaaaa\group-fourteen | 用户指定工作区（group-fourteen 仓库根），成员A D01 起在此编码 |
+| 后端仓库（A/B 使用） |  | | |
 | vue-admin 管理端（C 使用） | | | |
 | HarmonyOS 患者端工程（D 使用） | | | |
 
