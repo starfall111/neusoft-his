@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V2.3（2026-09-08 需求迭代·挂号流程改版：①GET /departments 父子两级结构（parentId）；②新增 GET /quotas 按科室+日期查号源；③新增 GET /quotas/days 日期条状态；④GET /schedules 支持 deptId 且响应带医生字段；⑤排班种子改当天~+7 并差异化余号/休息日。随 dto-contract V1.3 / init.sql V2.3） |
+| 文档版本 | V2.4（2026-09-10 需求迭代·统计大屏：管理端新增 GET /api/admin/stats/* 六接口示例（summary/trend/dept-rank/doctor-top/title-ratio/latest，按卡拆分，取值=管理端设计稿 M6 示例表）；顺带修复 §4 管理端分页示例遗漏 parentId。随 dto-contract V1.4 / 拆解文档 V1.10） |
 | 适用对象 | 前端 C（Vue 管理端）、前端 D（鸿蒙患者端） |
 | 核心约定 | **字段名 = 接口 DTO 字段（小驼峰）**；**取值 = init.sql 种子数据**；前后端并行开发期间，前端 mock 只允许使用本文档字段与取值 |
 | ⚠️ 铁律 | 缺字段 / 字段不符 / 需要新取值 → **不要自行编造**，记录到当日计划文档「契约变更记录」并在站会提对齐诉求（见 AGENTS.md 铁律二） |
@@ -225,7 +225,7 @@
 ```json
 { "code": 200, "message": "成功",
   "data": { "total": 4, "pageNum": 1, "pageSize": 10, "records": [
-    { "id": 1, "deptName": "心血管内科", "deptCategory": "内科", "deptIntro": "高血压、冠心病、心律失常等心血管疾病的诊断与治疗" }
+    { "id": 1, "deptName": "心血管内科", "deptCategory": "内科", "parentId": 5, "deptIntro": "高血压、冠心病、心律失常等心血管疾病的诊断与治疗" }
   ] } }
 ```
 
@@ -247,4 +247,56 @@
 { "doctorName": "孙一", "deptId": 4, "title": "主治医师", "skill": "新生儿疾病诊治" }
 // 失败示例
 { "code": 4001, "message": "科室不存在", "data": null }
+```
+
+### GET /api/admin/stats/*（统计大屏接口组，V2.4 新增；按卡拆分 6 接口，均需登录，/admin 前缀）
+
+> 统一口径（拆解文档 4.8 #15）：趋势/排行/占比 = 近 7 天（含当天）**有效**挂号单（不含已取消）；KPI 环比「较昨日」、注册用户「较上周同期」；`days`/`limit` 本期固定不放开。取值 = 管理端设计稿 M6 示例表（联调前 C 直接用本节 mock，联调后以接口为准）。
+
+```json
+// ① GET /api/admin/stats/summary —— KPI 四卡 + 今日时段分布
+{ "code": 200, "message": "成功",
+  "data": { "todayRegistrations": 128, "registrationsVsYesterday": 12,
+            "todayCancellations": 9,   "cancellationsVsYesterday": -3,
+            "totalUsers": 1024,        "usersVsLastWeek": 5,
+            "todayRevenue": 2860.00,   "revenueVsYesterday": 8,
+            "morningCount": 96,        "afternoonCount": 32 } }
+
+// ② GET /api/admin/stats/trend?days=7 —— 近 7 天挂号趋势折线（含当天，升序）
+{ "code": 200, "message": "成功",
+  "data": [ { "date": "2026-09-04", "registrations": 86 },
+            { "date": "2026-09-05", "registrations": 102 },
+            { "date": "2026-09-06", "registrations": 78 },
+            { "date": "2026-09-07", "registrations": 120 },
+            { "date": "2026-09-08", "registrations": 95 },
+            { "date": "2026-09-09", "registrations": 140 },
+            { "date": "2026-09-10", "registrations": 128 } ] }
+
+// ③ GET /api/admin/stats/dept-rank —— 科室挂号量 TOP4（降序；父分类节点不进榜）
+{ "code": 200, "message": "成功",
+  "data": [ { "deptName": "心血管内科", "count": 86 },
+            { "deptName": "儿科",       "count": 62 },
+            { "deptName": "消化内科",   "count": 54 },
+            { "deptName": "普通外科",   "count": 38 } ] }
+
+// ④ GET /api/admin/stats/doctor-top?limit=5 —— 医生挂号量 TOP5（降序；姓名/科室取自 init.sql 种子）
+{ "code": 200, "message": "成功",
+  "data": [ { "doctorName": "周建国", "deptName": "心血管内科", "count": 45 },
+            { "doctorName": "吴敏",   "deptName": "心血管内科", "count": 32 },
+            { "doctorName": "陈晓云", "deptName": "儿科",       "count": 28 },
+            { "doctorName": "李强",   "deptName": "普通外科",   "count": 21 },
+            { "doctorName": "王芳",   "deptName": "消化内科",   "count": 17 } ] }
+
+// ⑤ GET /api/admin/stats/title-ratio —— 职称挂号占比（近 7 天，中文直传）
+{ "code": 200, "message": "成功",
+  "data": [ { "title": "主任医师",     "count": 58, "percent": 46 },
+            { "title": "副主任医师",   "count": 42, "percent": 33 },
+            { "title": "主治医师",     "count": 26, "percent": 21 } ] }
+
+// ⑥ GET /api/admin/stats/latest?limit=4 —— 最新挂号动态（按 createTime 倒序，仅有效单）
+{ "code": 200, "message": "成功",
+  "data": [ { "createTime": "2026-09-10 14:32:05", "memberName": "张小满", "deptName": "心血管内科", "doctorName": "周建国", "registerFee": 30.00 },
+            { "createTime": "2026-09-10 13:05:41", "memberName": "张奶奶", "deptName": "儿科",       "doctorName": "陈晓云", "registerFee": 20.00 },
+            { "createTime": "2026-09-10 11:47:18", "memberName": "张小满", "deptName": "消化内科",   "doctorName": "王芳",   "registerFee": 15.00 },
+            { "createTime": "2026-09-10 10:12:56", "memberName": "张奶奶", "deptName": "普通外科",   "doctorName": "李强",   "registerFee": 20.00 } ] }
 ```

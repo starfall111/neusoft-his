@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V1.3（2026-09-08 需求迭代·挂号流程改版：①科室父子分类——DepartmentRespDto 新增 parentId、DepartmentSaveReqDto 的 deptCategory 改传 parentId；②新增 GET /quotas（QuotaRespDto）按科室+日期查号源；③新增 GET /quotas/days（QuotaDayRespDto）日期条状态；④GET /schedules 支持 deptId 且 ScheduleRespDto 增医生字段。随 init.sql V2.3 / mock-data V2.3 / 拆解文档 V1.9） |
-| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成。⚠️ V1.3 为发起方按铁律二代拟落稿——B 重新生成前须先把本节变更同步进 gen-day-plans.mjs 内嵌模板，否则重新生成会回退本变更 |
+| 文档版本 | V1.4（2026-09-10 需求迭代·统计大屏：新增管理端统计接口组——GET /admin/stats/summary、/trend?days=7、/dept-rank、/doctor-top?limit=5、/title-ratio、/latest?limit=4，**按卡拆分 6 接口**（管理端设计稿待对齐 #13 定稿），新增 6 个 Stats*RespDto；统计口径（#15 定稿）=趋势/排行近 7 天有效挂号单（不含已取消）、KPI 环比较昨日、注册用户较上周。随 mock-data V2.4 / 拆解文档 V1.10） |
+| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成。⚠️ V1.3 / V1.4 为发起方按铁律二代拟落稿——B 重新生成前须先把对应变更同步进 gen-day-plans.mjs 内嵌模板，否则重新生成会回退本变更 |
 | 用途 | 后端写 DTO、前端写类型定义与请求函数的**唯一字段依据**；与 db/mock-data.md（JSON 示例）、《项目拆解设计说明书》第 4 章（路径与规约）配套 |
 | ⚠️ 防漂移 | 40 份日计划内嵌的「当日 DTO 速览」与本文件同源生成；两处不一致时以本文件为准，并立即提对齐 |
 
@@ -196,11 +196,70 @@
 | status | String | 是 | 待就诊 / 已取消（中文直传） |
 | createTime | LocalDateTime | 是 | 下单时间；列表按此倒序 |
 
+### 统计域（后端 B 实现 / 管理端 C 消费；V1.4 新增）
+
+> 统一口径（管理端设计稿待对齐 #15 定稿）：趋势 / 排行 / 占比的统计对象 = **近 7 天（含当天）有效挂号单**（appointment_record，status≠已取消）；KPI 环比固定「较昨日」、注册用户环比「较上周同期」；`days` / `limit` 参数本期固定不放开。聚合读 appointment_record / dept / doctor / patient_user（实训单体库直接聚合 SQL，跨域读不拆服务）。
+
+**GET /admin/stats/summary · StatsSummaryRespDto（响应）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| todayRegistrations | Integer | 是 | 今日有效挂号单数（不含已取消） |
+| registrationsVsYesterday | Integer | 是 | 今日挂号环比：较昨日，%（正=升↑，负=降↓，前端按正负渲染） |
+| todayCancellations | Integer | 是 | 今日取消挂号单数 |
+| cancellationsVsYesterday | Integer | 是 | 取消环比：较昨日，% |
+| totalUsers | Long | 是 | 注册用户总数（patient_user 全量） |
+| usersVsLastWeek | Integer | 是 | 注册用户环比：较上周同期，% |
+| todayRevenue | BigDecimal | 是 | 今日收入 = 今日有效单 register_fee 快照求和，两位小数 |
+| revenueVsYesterday | Integer | 是 | 收入环比：较昨日，% |
+| morningCount | Integer | 是 | 今日上午有效单数（时段分布卡） |
+| afternoonCount | Integer | 是 | 今日下午有效单数（与 morningCount 之和 = todayRegistrations） |
+
+**GET /admin/stats/trend?days=7 · StatsTrendRespDto（响应，List）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| date | LocalDate | 是 | yyyy-MM-dd；近 7 天含当天，按日期升序 |
+| registrations | Integer | 是 | 当日有效挂号单数（近 7 天折线卡数据源） |
+
+**GET /admin/stats/dept-rank · StatsDeptRankRespDto（响应，List）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| deptName | String | 是 | 子科室名称（父分类节点不挂医生不产生挂号，自然不进榜） |
+| count | Integer | 是 | 近 7 天有效单数；固定 TOP4，按 count 降序（科室挂号量柱状卡） |
+
+**GET /admin/stats/doctor-top?limit=5 · StatsDoctorTopRespDto（响应，List）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| doctorName | String | 是 | 医生姓名 |
+| deptName | String | 是 | 所属科室名称 |
+| count | Integer | 是 | 近 7 天有效单数；固定 TOP5，按 count 降序（医生 TOP5 条形卡） |
+
+**GET /admin/stats/title-ratio · StatsTitleRatioRespDto（响应，List）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| title | String | 是 | 职称中文直传（主任医师 / 副主任医师 / 主治医师） |
+| count | Integer | 是 | 近 7 天有效单数 |
+| percent | Integer | 是 | 占比 0–100（四舍五入）；三档 percent 之和 ≈ 100（职称占比进度条卡） |
+
+**GET /admin/stats/latest?limit=4 · StatsLatestRespDto（响应，List）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| createTime | LocalDateTime | 是 | 下单时间 yyyy-MM-dd HH:mm:ss；按此倒序取最近 4 条有效单 |
+| memberName | String | 是 | 联查 patient_member 得出 |
+| deptName | String | 是 | 下单快照 dept_name_snap |
+| doctorName | String | 是 | 下单快照 doctor_name_snap |
+| registerFee | BigDecimal | 是 | 挂号费快照，两位小数 |
+
 ## 责任分工
 
 | 角色 | 职责 |
 | --- | --- |
-| 后端 B | auth / members / departments / doctors / schedules / admin 全部 DTO 实现与 @Schema 注解 |
+| 后端 B | auth / members / departments / doctors / schedules / admin（含 stats 统计组 6 RespDto，V1.4）全部 DTO 实现与 @Schema 注解 |
 | 后端 A | registrations 三个 DTO 实现与 @Schema 注解 |
 | 前端 C | 管理端相关类型从本文件逐字段抄写至 src/api/ |
 | 前端 D | 患者端相关类型从本文件逐字段抄写至 common/api/ |

@@ -1,19 +1,20 @@
-# 成员C（前端 · Vue3 管理端） · 第 4 天：管理端回归与UX
+# 成员C（前端 · Vue3 管理端） · 第 4 天：管理端回归与UX + 统计大屏页
 
 | 项 | 内容 |
 | --- | --- |
 | 日期 | 2026-09-10（周四） |
-| 关联故事 | S11/S12 |
-| 当日主题 | 管理端回归与UX |
+| 关联故事 | S11/S12/S13（统计大屏） |
+| 当日主题 | 管理端回归与UX + 统计大屏页（M6） |
 | 契约依据 | 《项目拆解设计说明书》第 4/6/7 章 · db/init.sql · db/mock-data.md |
 
 ## 1. 当日目标
 
-缓存链路三方验证；交互细节补齐。
+缓存链路三方验证；交互细节补齐；统计大屏页（M6）mock 渲染完成。
 
 ## 2. 前置条件（开工前逐项确认）
 
 - B 的科室缓存已上线（D4）
+- 图表库已定稿：ECharts 5 + vue-echarts（待对齐 #14，组长 2026-09-10 评审通过）
 
 ### 设计稿先行（页面任务动手前必看——先看稿、后写码）
 
@@ -21,10 +22,11 @@
 
 - 必读规范：doc/ui/UI统一规范.md
 - 截图目录：doc/ui/pen/页面截图/（截图即设计稿，以图片为准）
-- ℹ️ 本日为 UX 完善：以下截图即空态 / loading / 确认弹窗等交互形态的对照基准。
+- ℹ️ 本日为 UX 完善 + 大屏页开发：以下截图即空态 / loading / 确认弹窗等交互形态的对照基准。
 
 本日对应设计稿截图：
 
+- M6 统计大屏.png（大屏页整稿：七卡布局/环比色/折线样式）
 - M2 科室管理-正常.png
 - M2 科室管理-新增Dialog.png
 - M2 科室管理-删除确认.png
@@ -38,21 +40,43 @@
 
 1. 配合 B 验证『改科室→前台（App）立即可见』缓存链路
 2. UX 完善：loading、空态、表单重置、分页参数保持、删除后刷新当前页
+3. ⭐ 统计大屏页（M6，/admin/dashboard，侧边栏第三项）：①`npm i echarts vue-echarts` 入基线依赖；②`src/api/stats.ts` 集中定义六接口函数+TS 类型（从 db/mock-data.md V2.4 §4 逐字段抄写：summary/trend/dept-rank/doctor-top/title-ratio/latest）；③七卡按稿渲染——KPI×4（环比 ↑success/↓danger 按正负）、近 7 天折线（面积填充+数据点）、今日时段（上午 96/下午 32 双柱）、科室柱状 TOP4、医生条形 TOP5（前三名次 primary）、职称进度条×3、最新动态列表×4；④每卡 v-loading、接口失败卡内 el-empty+Message、空数据 el-empty（单卡失败不白屏）；⑤顶栏当前日期；mock 期用 mock-data.md V2.4 示例值（与设计稿同源）
+4. 大屏页对照「M6 统计大屏.png」逐卡自验截图，入 doc/screenshots/
 
 ## 4. 涉及契约（表 / 接口 / Key）
 
-- 当日不涉及契约文件改动
+- 统计接口组：拆解文档 4.6.1 · dto-contract V1.4「统计域」 · mock-data V2.4 §4（V1.3 落契约）
+- 其余当日不涉及契约文件改动
 
 ### 当日 DTO 速览（权威定义：db/dto-contract.md，与本表同源生成；冲突以契约文件为准并提对齐，禁止私自加改字段）
 
-**GET /departments（S4）、GET /admin/departments（S11） · DepartmentRespDto（响应）**
+**GET /departments（S4）、GET /admin/departments（S11） · DepartmentRespDto（响应；V2.3 父子平铺）**
 
 | 字段 | 类型 | 必填 | 校验 / 说明 |
 | --- | --- | --- | --- |
 | id | Long | 是 | dept.id |
 | deptName | String | 是 | 科室名称，≤100 |
-| deptCategory | String | 是 | 分类（管理端下拉七类：内科/外科/妇儿/五官/皮肤/中医/其他） |
+| deptCategory | String | 是 | 分类名称冗余：子科室=父分类名、父分类节点=自身名（后端按 parentId 维护） |
+| parentId | Long | 否 | 父分类 id；NULL=自身为父分类节点（V2.3 新增） |
 | deptIntro | String | 否 | 简介，≤500 |
+
+**GET /admin/stats/summary · StatsSummaryRespDto（响应；V1.4 新增，KPI 四卡+时段）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| todayRegistrations | Integer | 是 | 今日有效挂号单数；环比 registrationsVsYesterday（较昨日，%正升负降） |
+| todayCancellations | Integer | 是 | 今日取消单数；环比 cancellationsVsYesterday |
+| totalUsers | Long | 是 | 注册用户总数；环比 usersVsLastWeek（较上周） |
+| todayRevenue | BigDecimal | 是 | 今日收入两位小数；环比 revenueVsYesterday |
+| morningCount / afternoonCount | Integer | 是 | 上午/下午单数（时段卡，之和=今日挂号） |
+
+**其余统计五接口（V1.4，src/api/stats.ts 逐字段抄写）**
+
+- `GET /admin/stats/trend?days=7` → `StatsTrendRespDto{date, registrations}`（升序 7 天，折线卡）
+- `GET /admin/stats/dept-rank` → `StatsDeptRankRespDto{deptName, count}`（TOP4 降序，柱状卡）
+- `GET /admin/stats/doctor-top?limit=5` → `StatsDoctorTopRespDto{doctorName, deptName, count}`（条形卡）
+- `GET /admin/stats/title-ratio` → `StatsTitleRatioRespDto{title, count, percent}`（进度条卡）
+- `GET /admin/stats/latest?limit=4` → `StatsLatestRespDto{createTime, memberName, deptName, doctorName, registerFee}`（动态列表卡）
 
 **GET /doctors（S5）、GET /admin/doctors（S12） · DoctorRespDto（响应）**
 
@@ -70,20 +94,24 @@
 
 - [ ] 缓存链路验证通过（记录演示步骤，答辩用）
 - [ ] UX 检查单全部通过
+- [ ] 大屏页七卡齐全（KPI×4/折线/时段/柱状/条形/占比/动态），与「M6 统计大屏.png」逐卡对照一致
+- [ ] 每卡 loading/空态/接口失败三态可演示；侧边栏「统计大屏」选中高亮
+- [ ] stats.ts 类型与 mock-data.md V2.4 §4 逐字段一致；组件内无手写 URL/字段
 
 ## 6. 产出物
 
-- 缓存即时生效演示步骤记录
+- 缓存即时生效演示步骤记录 + 统计大屏页（mock 版）+ src/api/stats.ts
 
 ## 7. 今日对齐点（涉及契约必读 AGENTS.md 铁律）
 
 - 与 B/D 三方验证；发现接口问题走缺陷清单给 B
+- 统计口径确认：大屏数值=近 7 天有效单（不含已取消），与 B·D04 实现口径一致（明日切真实接口前复核）
 
 ## 8. 契约变更记录（涉 DDL / 接口结构 / 接口路径时必填，先对齐再动手）
 
 | # | 时间 | 变更内容（DDL/接口结构/路径） | 影响成员 | 对齐状态 |
 | --- | --- | --- | --- | --- |
-|  |  |  |  | ☐ 未对齐 / ☑ 已对齐 |
+| 1 | 2026-09-10 | 新增统计接口组 6 接口（GET /admin/stats/*）：Stats*RespDto ×6 落 dto-contract V1.4「统计域」/ mock-data V2.4 §4 / 拆解文档 4.6.1；图表库定稿 ECharts 5 + vue-echarts（#14，组长评审通过） | B（实现） | ☑ 已对齐（组长 2026-09-10 确认；本日 mock 开发，D05 切真实） |
 
 ## 9. 答辩积累区（每日收工前必填，AGENTS.md 规则六/七；第 9 天汇总为答辩讲稿与问题库素材）
 
@@ -92,6 +120,7 @@
 | 技术点（当日预填） | 我的理解（自己写一两句） | 对应代码/文件 | 预判老师追问 |
 | --- | --- | --- | --- |
 | 改数据 → 缓存清除 → 前台可见的完整链路 |  |  |  |
+| ECharts 按需注册与按卡封装（单卡失败不白屏） |  |  |  |
 
 ### b. 今日最有讲头的问题（从 exception-day04/ 的 issue 中挑 1 条，浓缩成一句话答辩素材；无 issue 则填「今日无」）
 
