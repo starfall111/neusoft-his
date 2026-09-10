@@ -2,7 +2,7 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V2.5（2026-09-10 需求迭代·管理端运营页：新增患者管理 /api/admin/users 分页+封禁/解封、挂号单管理 /api/admin/registrations 只读分页、排班管理 /api/admin/schedules CRUD 示例；封禁涉 DDL patient_user 加 status 列（init.sql V2.4），登录封禁→1003。随 dto-contract V1.5 / 拆解文档 V1.11） |
+| 文档版本 | V2.6（2026-09-10 需求迭代·站内信+MQ：新增 GET /api/messages 分页、/unread-count、/{id}/read、/read-all 与管理端 POST /api/admin/messages 群发公告示例；MQ 统一通知 topic his_notification 定稿。随 dto-contract V1.6 / 拆解文档 V1.12 / 迁移脚本 V2.5） |
 | 适用对象 | 前端 C（Vue 管理端）、前端 D（鸿蒙患者端） |
 | 核心约定 | **字段名 = 接口 DTO 字段（小驼峰）**；**取值 = init.sql 种子数据**；前后端并行开发期间，前端 mock 只允许使用本文档字段与取值 |
 | ⚠️ 铁律 | 缺字段 / 字段不符 / 需要新取值 → **不要自行编造**，记录到当日计划文档「契约变更记录」并在站会提对齐诉求（见 AGENTS.md 铁律二） |
@@ -358,4 +358,38 @@
 { "code": 5002, "message": "仅未来日期的排班可修改或删除", "data": null }
 { "code": 5003, "message": "该排班已有挂号，不可删除", "data": null }
 { "code": 5004, "message": "号源数不能小于已挂号数", "data": null }
+```
+
+## 5. 站内信接口 Mock（V2.6 新增；患者端 D 消息中心 / 管理端 C 公告群发）
+
+> 触发链路：挂号成功/取消 → MQ topic `his_notification` → 消费者落 site_message；管理端群发公告同步直写。D 端消息中心（P11）与首页铃铛未读数消费以下接口；C 端 M10 公告页消费群发接口。
+
+```json
+// ① GET /api/messages?pageNum=1&pageSize=10（我的站内信分页；可选 ?isRead=0）
+{ "code": 200, "message": "成功",
+  "data": { "total": 3, "pageNum": 1, "pageSize": 10, "records": [
+    { "id": 3, "title": "系统维护公告", "content": "9月12日凌晨系统例行维护，期间挂号服务暂停约30分钟。",
+      "msgType": "系统通知",   "orderNo": null, "isRead": 0, "createTime": "2026-09-10 18:00:00" },
+    { "id": 2, "title": "挂号已取消", "content": "您已取消 9月11日上午 周建国 医生的预约，号源已释放。",
+      "msgType": "挂号已取消", "orderNo": "202609090915105678901234", "isRead": 0, "createTime": "2026-09-09 16:20:33" },
+    { "id": 1, "title": "挂号成功", "content": "您已成功预约 9月9日上午 周建国 医生（心血管内科），请按时就诊。",
+      "msgType": "挂号成功",   "orderNo": "202609081030221234567890", "isRead": 1, "createTime": "2026-09-08 10:30:22" }
+  ] } }
+
+// ② GET /api/messages/unread-count（未读数，首页铃铛红点；单字段响应）
+{ "code": 200, "message": "成功", "data": 2 }
+
+// ③ POST /api/messages/3/read（标记已读）
+{ "code": 200, "message": "操作成功", "data": null }
+// 消息不存在或不属于当前用户
+{ "code": 4004, "message": "消息不存在", "data": null }
+
+// ④ POST /api/messages/read-all（全部已读）
+{ "code": 200, "message": "操作成功", "data": null }
+
+// ⑤ POST /api/admin/messages（管理端群发系统公告，全员逐行落库）
+// 请求
+{ "title": "系统维护公告", "content": "9月12日凌晨系统例行维护，期间挂号服务暂停约30分钟。" }
+// 成功
+{ "code": 200, "message": "公告已发送", "data": null }
 ```

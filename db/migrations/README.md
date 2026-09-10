@@ -36,3 +36,4 @@
 | 脚本 | 内容 | 关联契约 | 状态 |
 | --- | --- | --- | --- |
 | `V2.4__patient_user_add_status.sql` | patient_user 加 `status` 列（正常/已封禁）+ CHECK 约束 | dto-contract V1.5 / mock-data V2.5 / 拆解文档 V1.11（4.6.2） | 已提交（随契约定稿） |
+| `V2.5__create_site_message.sql` | 新增站内信表 `site_message`（MQ 异步通知 + 群发公告落库） | dto-contract V1.6 / mock-data V2.6 / 拆解文档 V1.12（4.9、7.3） | 已提交（B·D07 站会终审 → A·D08 执行） |

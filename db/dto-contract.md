@@ -2,8 +2,8 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 文档版本 | V1.5（2026-09-10 需求迭代·管理端运营页：新增患者管理 GET /admin/users + POST /{id}/ban、/{id}/unban（封禁涉 DDL：patient_user 加 status 列，init.sql V2.4）；挂号单管理 GET /admin/registrations 只读分页；排班管理 /admin/schedules CRUD（AdminScheduleSaveReqDto/UpdateReqDto）。随 init.sql V2.4 / mock-data V2.5 / 拆解文档 V1.11；错误码新增 1003、5001–5004） |
-| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成。⚠️ V1.3–V1.5 为发起方按铁律二/三代拟落稿——B 重新生成前须先把对应变更同步进 gen-day-plans.mjs 内嵌模板，否则重新生成会回退本变更 |
+| 文档版本 | V1.6（2026-09-10 需求迭代·站内信+MQ：新增站内信接口组——GET /messages 分页、GET /messages/unread-count、POST /messages/{id}/read、POST /messages/read-all、管理端群发 POST /admin/messages（AdminMessageSendReqDto）+ MessageRespDto；MQ 落地定稿——统一通知 topic `his_notification`（type：挂号成功/挂号已取消）+ NotificationMessage 消息体契约，rocketmq-spring-boot-starter 定稿 2.3.1。DDL 走迁移脚本 V2.5__create_site_message.sql（site_message 表，init.sql 基线不变）。随 mock-data V2.6 / 拆解文档 V1.12；错误码新增 4004） |
+| 维护方式 | **由 tools/gen-day-plans.mjs 自动生成，勿手改**；任何变更走 AGENTS.md 铁律二（接口数据结构变更）全组对齐后重新生成。⚠️ V1.3–V1.6 为发起方按铁律二/三代拟落稿——B 重新生成前须先把对应变更同步进 gen-day-plans.mjs 内嵌模板，否则重新生成会回退本变更 |
 | 用途 | 后端写 DTO、前端写类型定义与请求函数的**唯一字段依据**；与 db/mock-data.md（JSON 示例）、《项目拆解设计说明书》第 4 章（路径与规约）配套 |
 | ⚠️ 防漂移 | 40 份日计划内嵌的「当日 DTO 速览」与本文件同源生成；两处不一致时以本文件为准，并立即提对齐 |
 
@@ -314,11 +314,52 @@
 
 **DELETE /admin/schedules/{id}（删除排班，逻辑删除）**：无 body，返回 `Result<Void>`；已有**有效挂号**（待就诊）→ **5003 该排班已有挂号，不可删除**；仅未来日期可删（→5002）。
 
+### 消息域（后端 A 全链路实现（his-message 模块）：MQ 生产/消费 + 站内信接口；患者端 D + 管理端 C 消费；V1.6 新增）
+
+> 数据表：site_message（迁移脚本 `db/migrations/V2.5__create_site_message.sql`，铁律一）。触发：①挂号成功/取消 → his-registration 经 MQ（topic `his_notification`）异步通知，消费者落库；②管理端群发系统公告（同步直写，按用户逐行落库，不走 MQ）。
+
+**GET /messages（我的站内信分页，isRead 可选筛选，createTime 倒序） · MessageRespDto（响应，PageDTO 包装）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| id | Long | 是 | site_message.id |
+| title | String | 是 | 消息标题，≤100 |
+| content | String | 是 | 消息正文，≤500 |
+| msgType | String | 是 | 挂号成功 / 挂号已取消 / 系统通知（中文直传，前端配色区分） |
+| orderNo | String | 否 | 关联订单号（系统公告为 null；可深链至挂号记录） |
+| isRead | Integer | 是 | 0 未读 / 1 已读 |
+| createTime | LocalDateTime | 是 | 消息时间 yyyy-MM-dd HH:mm:ss，列表按此倒序 |
+
+**GET /messages/unread-count（未读数，首页铃铛红点）**：无 RespDto，单字段响应直返 `Result<Integer>`
+
+**POST /messages/{id}/read（标记已读）**：路径参数，`Result<Void>`；写入 read_time；id 不存在或不属于当前用户 → **4004**
+
+**POST /messages/read-all（全部已读）**：无 body，`Result<Void>`（当前用户全部未读置 1）
+
+**POST /admin/messages（管理端群发系统公告，全员逐行落库） · AdminMessageSendReqDto（请求）**
+
+| 字段 | 类型 | 必填 | 校验 / 说明 |
+| --- | --- | --- | --- |
+| title | String | 是 | @NotBlank，≤100；公告标题 |
+| content | String | 是 | @NotBlank，≤500；公告正文 |
+
+**MQ 消息体契约（内部契约，非 HTTP 接口） · NotificationMessage（topic：`his_notification`）**
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| type | String | 是 | 挂号成功 / 挂号已取消（消费者据此生成标题与 msg_type） |
+| orderNo | String | 是 | 订单号（落 site_message.order_no） |
+| userId | Long | 是 | 接收患者账号 id |
+| memberName | String | 是 | 就诊人姓名（正文用） |
+| doctorName | String | 是 | 医生姓名（正文用） |
+| workDate | LocalDate | 是 | 就诊日期 yyyy-MM-dd |
+| timeSegment | String | 是 | 上午 / 下午 |
+
 ## 责任分工
 
 | 角色 | 职责 |
 | --- | --- |
 | 后端 B | auth（含封禁登录拦截 1003，V1.5）/ members / departments / doctors / schedules（含管理端排班 CRUD，V1.5）/ admin（含 stats 统计组 6 RespDto，V1.4；患者管理 AdminUserRespDto，V1.5）全部 DTO 实现与 @Schema 注解 |
-| 后端 A | registrations 三个 DTO + 管理端挂号单列表 AdminRegistrationRespDto（V1.5）实现与 @Schema 注解 |
+| 后端 A | registrations 三个 DTO + 管理端挂号单列表 AdminRegistrationRespDto（V1.5）+ 消息域全部 DTO 与 MQ NotificationMessage（V1.6，his-message 模块）实现与 @Schema 注解 |
 | 前端 C | 管理端相关类型从本文件逐字段抄写至 src/api/ |
 | 前端 D | 患者端相关类型从本文件逐字段抄写至 common/api/ |
